@@ -61,6 +61,25 @@ const wchar_t* to_wstring(const String::Utf8Value& str)
   return output;
 }
 
+std::string to_utf8_string(const std::wstring &input)
+{
+  int mblen = WideCharToMultiByte(
+    CP_UTF8, 0,
+    input.data(), input.size(),
+    NULL, 0, NULL, NULL);
+  if(mblen <= 0) {
+    return std::string();
+  }
+  std::vector<char> tmp(mblen);
+  int mblen2 = WideCharToMultiByte(
+    CP_UTF8, 0,
+    input.data(), input.size(),
+    tmp.data(), tmp.size(),
+    NULL, NULL);
+  assert(mblen2 == mblen);
+  return std::string(tmp.data(), tmp.size());
+}
+
 static winpty_t *get_pipe_handle(int handle) {
   for(size_t i = 0; i < ptyHandles.size(); ++i) {
     winpty_t *ptyHandle = ptyHandles[i];
@@ -95,16 +114,14 @@ static bool file_exists(std::wstring filename) {
 // cmd.exe -> C:\Windows\system32\cmd.exe
 static std::wstring get_shell_path(std::wstring filename)  {
 
-  std::wstring shellpath;
-
   if(file_exists(filename)) {
-    return shellpath;
+    return filename;
   }
 
   wchar_t buffer_[MAX_ENV];
   int read = ::GetEnvironmentVariableW(L"Path", buffer_, MAX_ENV);
   if(!read) {
-    return shellpath;
+    return filename;
   }
 
   std::wstring delimiter = L";";
@@ -128,13 +145,12 @@ static std::wstring get_shell_path(std::wstring filename)  {
     }
 
     if(file_exists(searchPath)) {
-      shellpath = searchPath;
-      break;
+      return searchPath;
     }
 
   }
 
-  return shellpath;
+  return filename;
 }
 
 /*
@@ -274,8 +290,6 @@ static NAN_METHOD(PtyStartProcess) {
     shellpath = filename;
   }
 
-  std::string shellpath_(shellpath.begin(), shellpath.end());
-
   if(shellpath.empty() || !file_exists(shellpath)) {
     goto invalid_filename;
   }
@@ -291,7 +305,7 @@ open:
    goto cleanup;
 
 invalid_filename:
-   why << "File not found: " << shellpath_;
+   why << "File not found: '" << to_utf8_string(shellpath) << "'";
    Nan::ThrowError(why.str().c_str());
    goto cleanup;
 
